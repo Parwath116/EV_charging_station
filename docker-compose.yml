@@ -1,0 +1,48 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: voltgrid-mongo
+    restart: unless-stopped
+    ports:
+      - '27018:27017'
+    environment:
+      - MONGO_INITDB_DATABASE=voltgrid
+    command: >
+      bash -c "
+        mongod --replSet rs0 --bind_ip_all &
+        MONGOD_PID=\$$!
+        echo 'Awaiting MongoDB daemon startup on port 27017...'
+        until mongosh --port 27017 --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q '1'; do
+          sleep 1
+        done
+        echo 'Verifying replica set status...'
+        mongosh --port 27017 --quiet --eval '
+          try {
+            rs.status();
+            console.log(\"Replica set rs0 is already active.\");
+          } catch(e) {
+            console.log(\"Initiating replica set rs0...\");
+            rs.initiate({
+              _id: \"rs0\",
+              members: [{ _id: 0, host: \"localhost:27017\" }]
+            });
+          }
+        '
+        wait \$$MONGOD_PID
+      "
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          "mongosh --port 27017 --quiet --eval 'rs.status().ok === 1 ? quit(0) : quit(1)'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - voltgrid-mongo-data:/data/db
+
+volumes:
+  voltgrid-mongo-data:
+    name: voltgrid-mongo-data

@@ -1,0 +1,416 @@
+### ==============================================================================
+### VoltGrid Commercial EV Charging Network Platform - API Specification
+### REST Client / Postman Executable Collection
+### Target: Bengaluru Metropolitan Grid Engine
+### ==============================================================================
+
+@baseUrl = http://localhost:5000/api
+@adminEmail = admin@voltgrid.internal
+@operatorEmail = operator.whitefield@voltgrid.internal
+@driverEmail = driver.aarav.mehta.1@voltgrid.internal
+@seedPassword = VoltGrid#2026
+
+### ------------------------------------------------------------------------------
+### 1. PLATFORM HEALTH, TOPOLOGY & METRICS
+### ------------------------------------------------------------------------------
+
+### 1.1 Liveness Probe & Round-Trip Ping
+GET {{baseUrl}}/health
+Accept: application/json
+
+### 1.2 Replica Set Topology & DB Storage Stats
+GET {{baseUrl}}/health/db-stats
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 2. AUTHENTICATION & ACCESS CONTROL
+### ------------------------------------------------------------------------------
+
+### 2.1 Driver Registration
+# @name registerDriver
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "new.driver.test@voltgrid.internal",
+  "password": "Password@2026",
+  "name": "Kiran Rao",
+  "phone": "+91 98450 11223"
+}
+
+### 2.2 Login as Admin
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{seedPassword}}"
+}
+
+### Save Admin Token
+@adminToken = {{loginAdmin.response.body.data.token}}
+
+### 2.3 Login as Operator
+# @name loginOperator
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{operatorEmail}}",
+  "password": "{{seedPassword}}"
+}
+
+### Save Operator Token
+@operatorToken = {{loginOperator.response.body.data.token}}
+
+### 2.4 Login as Driver
+# @name loginDriver
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{driverEmail}}",
+  "password": "{{seedPassword}}"
+}
+
+### Save Driver Token
+@driverToken = {{loginDriver.response.body.data.token}}
+
+### 2.5 Current Authenticated User Profile
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{driverToken}}
+Accept: application/json
+
+### 2.6 Logout & Clear Session Cookie
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{driverToken}}
+
+
+### ------------------------------------------------------------------------------
+### 3. CHARGING STATION DISCOVERY & GEOSPATIAL SEARCH (2dsphere)
+### ------------------------------------------------------------------------------
+
+### 3.1 List Stations with Filtering & Pagination
+GET {{baseUrl}}/stations?area=Whitefield&status=active&limit=10&page=1
+Accept: application/json
+
+### 3.2 Full-Text Search Catalog ($text index on name, address, area, amenities)
+GET {{baseUrl}}/stations?search=Fast+CCS2+Indiranagar
+Accept: application/json
+
+### 3.3 Geospatial Proximity ($near - nearest chargers to Indiranagar)
+GET {{baseUrl}}/stations/nearest?lng=77.6412&lat=12.9784&maxDistance=10000
+Accept: application/json
+
+### 3.4 Bounding Box Viewport Search ($geoWithin inside Bengaluru corridor)
+GET {{baseUrl}}/stations/bounds?south=12.90&west=77.55&north=13.05&east=77.70
+Accept: application/json
+
+### 3.5 Single Station Details
+# @name getStation
+GET {{baseUrl}}/stations/6ac544a2f2929b4c5923512a
+Accept: application/json
+
+### 3.6 Create Charging Station (Operator / Admin)
+POST {{baseUrl}}/stations
+Authorization: Bearer {{operatorToken}}
+Content-Type: application/json
+
+{
+  "name": "VoltGrid Hub - Domlur Bridge",
+  "operator": "VoltGrid Operations BLR",
+  "address": "100 Feet Intermediate Ring Road, Domlur",
+  "area": "Indiranagar",
+  "tariffPerKWh": 19.5,
+  "location": {
+    "type": "Point",
+    "coordinates": [77.6385, 12.9612]
+  },
+  "amenities": ["Cafe", "Restroom", "24/7 Security", "WiFi"],
+  "chargers": [
+    {
+      "chargerId": "CHG-DML-01",
+      "connector": "CCS2",
+      "powerKW": 120,
+      "status": "available"
+    },
+    {
+      "chargerId": "CHG-DML-02",
+      "connector": "Type2",
+      "powerKW": 22,
+      "status": "available"
+    }
+  ]
+}
+
+### 3.7 Update Station Tariff (Operator / Admin)
+PATCH {{baseUrl}}/stations/6ac544a2f2929b4c5923512a/tariff
+Authorization: Bearer {{operatorToken}}
+Content-Type: application/json
+
+{
+  "tariffPerKWh": 21.0
+}
+
+### 3.8 Update Station Status (Operator / Admin)
+PATCH {{baseUrl}}/stations/6ac544a2f2929b4c5923512a/status
+Authorization: Bearer {{operatorToken}}
+Content-Type: application/json
+
+{
+  "status": "maintenance"
+}
+
+### 3.9 CSV Bulk Import Stations (Admin Only)
+POST {{baseUrl}}/stations/bulk-import
+Authorization: Bearer {{adminToken}}
+Content-Type: text/csv
+
+name,operator,address,area,tariffPerKWh,lng,lat,connector,powerKW,amenities
+VoltGrid Hebbal Hub,VoltGrid Fleet,Bellary Road,Hebbal,18.0,77.5920,13.0358,CCS2,150,Restroom;Cafe
+VoltGrid MG Road Node,VoltGrid Retail,MG Road Metro,Indiranagar,22.0,77.6080,12.9750,Type2,22,WiFi
+
+
+### ------------------------------------------------------------------------------
+### 4. SLOT RESERVATIONS & BOOKINGS (ACID Transactions)
+### ------------------------------------------------------------------------------
+
+### 4.1 Create Conflict-Free Booking (Driver)
+# @name createBooking
+POST {{baseUrl}}/bookings
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+{
+  "stationId": "6ac544a2f2929b4c5923512a",
+  "chargerId": "CHG-WF1-01",
+  "startTime": "2026-10-10T14:00:00.000Z",
+  "endTime": "2026-10-10T15:00:00.000Z",
+  "estimatedKWh": 30
+}
+
+### 4.2 List Authenticated User Bookings (Driver)
+GET {{baseUrl}}/bookings
+Authorization: Bearer {{driverToken}}
+Accept: application/json
+
+### 4.3 Cancel Booking (Driver / Admin)
+PATCH {{baseUrl}}/bookings/{{createBooking.response.body.data._id}}/cancel
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+
+### ------------------------------------------------------------------------------
+### 5. CHARGING SESSIONS & WALLET SETTLEMENT (ACID Transactions)
+### ------------------------------------------------------------------------------
+
+### 5.1 Start Live Charging Session (Driver)
+# @name startSession
+POST {{baseUrl}}/sessions/start
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+{
+  "stationId": "6ac544a2f2929b4c5923512a",
+  "chargerId": "CHG-WF1-01"
+}
+
+### 5.2 Stop Charging Session & Debit Wallet (Driver)
+POST {{baseUrl}}/sessions/{{startSession.response.body.data._id}}/stop
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+{
+  "energyKWh": 24.5
+}
+
+### 5.3 Driver Session History
+GET {{baseUrl}}/sessions/history
+Authorization: Bearer {{driverToken}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 6. USER PROFILE, VEHICLES, WALLET & AUDIT LOGS
+### ------------------------------------------------------------------------------
+
+### 6.1 Get User Profile
+GET {{baseUrl}}/users/profile
+Authorization: Bearer {{driverToken}}
+Accept: application/json
+
+### 6.2 Top Up Driver Wallet ($inc atomic operator)
+POST {{baseUrl}}/users/wallet/topup
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+{
+  "amount": 1000
+}
+
+### 6.3 Register Electric Vehicle ($push array operator)
+POST {{baseUrl}}/users/vehicles
+Authorization: Bearer {{driverToken}}
+Content-Type: application/json
+
+{
+  "make": "Tata",
+  "model": "Nexon EV Max",
+  "connectorType": "CCS2",
+  "batteryKWh": 40.5
+}
+
+### 6.4 Add Favourite Station ($addToSet operator)
+POST {{baseUrl}}/users/favourites/6ac544a2f2929b4c5923512a
+Authorization: Bearer {{driverToken}}
+
+### 6.5 Remove Favourite Station ($pull operator)
+DELETE {{baseUrl}}/users/favourites/6ac544a2f2929b4c5923512a
+Authorization: Bearer {{driverToken}}
+
+### 6.6 List All Users (Admin Only)
+GET {{baseUrl}}/users?role=driver&limit=10
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 6.7 Compliance Audit Trail (Admin / Operator)
+GET {{baseUrl}}/users/audit-logs?limit=25
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+
+### ------------------------------------------------------------------------------
+### 7. ANALYTICS & AGGREGATION PIPELINES (Admin / Operator)
+### ------------------------------------------------------------------------------
+
+### 7.1 Peak-Hour Diurnal Charging Load ($project, $hour, $group, $sort)
+GET {{baseUrl}}/analytics/peak-hours
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.2 Station Utilization & Revenue ($lookup, $project, $sort)
+GET {{baseUrl}}/analytics/station-performance
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.3 Multi-Faceted Area Metrics ($facet multi-aggregation)
+GET {{baseUrl}}/analytics/area-metrics
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.4 Session Dwell Time Distribution ($bucket boundaries)
+GET {{baseUrl}}/analytics/dwell-time
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.5 7-Day Trailing Rolling Energy ($setWindowFields)
+GET {{baseUrl}}/analytics/rolling-energy
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.6 Algorithmic Network Expansion Recommendations
+GET {{baseUrl}}/analytics/expansion-suggestions
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 7.7 Trigger Scheduled Materialized View Roll-up ($merge)
+POST {{baseUrl}}/analytics/refresh-daily-stats
+Authorization: Bearer {{adminToken}}
+
+### 7.8 Export Station Performance to CSV (Stream)
+GET {{baseUrl}}/analytics/export/stations.csv
+Authorization: Bearer {{operatorToken}}
+
+### 7.9 Export Regional Area Breakdown to CSV (Stream)
+GET {{baseUrl}}/analytics/export/areas.csv
+Authorization: Bearer {{operatorToken}}
+
+
+### ------------------------------------------------------------------------------
+### 8. OPERATIONAL ALERTS & HARDWARE ANOMALIES (Admin / Operator)
+### ------------------------------------------------------------------------------
+
+### 8.1 List Operational Alerts (leveraging partial index)
+GET {{baseUrl}}/alerts?acknowledged=false&limit=20
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 8.2 Get Unread Alerts Count
+GET {{baseUrl}}/alerts/unread-count
+Authorization: Bearer {{operatorToken}}
+Accept: application/json
+
+### 8.3 Resolve Operational Alert
+PATCH {{baseUrl}}/alerts/6ac547157e7650bcfa3f7f32/resolve
+Authorization: Bearer {{operatorToken}}
+
+
+### ------------------------------------------------------------------------------
+### 9. DATABASE LAB & QUERY PERFORMANCE TOOLING (Admin Only)
+### ------------------------------------------------------------------------------
+
+### 9.1 Explain Plan Analysis: Geospatial Discovery ($near 2dsphere)
+POST {{baseUrl}}/lab/explain
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "scenario": "geo_near"
+}
+
+### 9.2 Explain Plan Analysis: Peak-Hour Aggregation Pipeline
+POST {{baseUrl}}/lab/explain
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "scenario": "peak_hour_agg"
+}
+
+### 9.3 Explain Plan Analysis: Text Search ($text)
+POST {{baseUrl}}/lab/explain
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "scenario": "text_search"
+}
+
+### 9.4 Side-by-Side Index Benchmark: IXSCAN vs COLLSCAN
+GET {{baseUrl}}/lab/index-comparison
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### 9.5 Strict $jsonSchema Validation Sandbox (Captures MongoDB Error 121)
+POST {{baseUrl}}/lab/validate-demo
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "type": "negative_wallet"
+}
+
+### 9.6 ACID Transaction Sandbox: Successful Commit
+POST {{baseUrl}}/lab/transaction-demo
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "abort": false
+}
+
+### 9.7 ACID Transaction Sandbox: Injected Fault & Automatic Rollback
+POST {{baseUrl}}/lab/transaction-demo
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "abort": true
+}
+
+### 9.8 Cluster Storage Footprint & Index Coverage Summary (collStats)
+GET {{baseUrl}}/lab/schema-summary
+Authorization: Bearer {{adminToken}}
+Accept: application/json
