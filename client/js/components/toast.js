@@ -25,6 +25,12 @@ class ToastService {
 
   show(message, type = 'info', duration = 4000) {
     const container = this.getContainer();
+
+    // Prevent toast overflow: keep at most 3 visible toasts
+    while (container.children.length >= 3) {
+      container.removeChild(container.firstChild);
+    }
+
     const toast = document.createElement('div');
     toast.className = `toast-item toast-${type}`;
 

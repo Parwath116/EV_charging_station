@@ -14,6 +14,7 @@ export class NotificationManager {
     this.alerts = [];
     this.isOpen = false;
     this.reconnectTimer = null;
+    this.lastAlertToast = 0;
   }
 
   init() {
@@ -98,8 +99,15 @@ export class NotificationManager {
     this.updateBadge();
     this.alerts.unshift(alert);
 
-    // Show live toast for high or critical anomalies
-    if (alert.severity === 'critical' || alert.severity === 'high') {
+    // Show live toast for high or critical anomalies (throttled to avoid toast storms)
+    const now = Date.now();
+    const isPrivileged = state.hasRole('admin', 'operator');
+    if (
+      isPrivileged &&
+      (alert.severity === 'critical' || alert.severity === 'high') &&
+      now - this.lastAlertToast > 7000
+    ) {
+      this.lastAlertToast = now;
       const icon = alert.severity === 'critical' ? '🚨' : '⚠️';
       toast.error(`${icon} [${alert.type.toUpperCase()}] ${alert.message}`);
     }
@@ -119,7 +127,7 @@ export class NotificationManager {
   }
 
   async refreshUnreadCount() {
-    if (!state.user || (state.user.role !== 'admin' && state.user.role !== 'operator')) {
+    if (!state.hasRole('admin', 'operator')) {
       this.unreadCount = 0;
       this.updateBadge();
       return;
@@ -178,7 +186,7 @@ export class NotificationManager {
   }
 
   async fetchAlerts() {
-    if (!state.user || (state.user.role !== 'admin' && state.user.role !== 'operator')) {
+    if (!state.hasRole('admin', 'operator')) {
       this.alerts = [];
       return;
     }
@@ -239,7 +247,7 @@ export class NotificationManager {
             <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: var(--text-muted);">
               <span>Charger: <code>${alert.chargerId}</code></span>
               ${
-                state.hasRole('operator')
+                state.hasRole('operator', 'admin')
                   ? `<button class="btn btn-sm btn-secondary btn-resolve-alert" data-id="${alert._id}" style="padding: 0.2rem 0.6rem; font-size: 0.75rem;">
                       Acknowledge & Resolve
                     </button>`

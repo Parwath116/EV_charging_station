@@ -18,15 +18,41 @@ export class ProfileView {
     if (!state.isAuthenticated) {
       container.innerHTML = `
         <div class="container" style="padding-top: var(--space-2xl); text-align: center;">
-          <div class="card" style="max-width: 500px; margin: 0 auto; padding: 2rem;">
-            <h2>Authentication Required</h2>
-            <p style="color: var(--text-secondary); margin: 1rem 0 1.5rem 0;">
+          <div class="card" style="max-width: 520px; margin: 0 auto; padding: 2.5rem 2rem; border-radius: var(--radius-lg);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">👤</div>
+            <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">Authentication Required</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.95rem; line-height: 1.6;">
               Please sign in to manage your profile, vehicle fleet, and wallet balance.
             </p>
-            <a href="#/login?redirect=profile" class="btn btn-primary">Sign In</a>
+            <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+              <button id="btn-quick-login-driver-profile" class="btn btn-primary" type="button">
+                ⚡ Quick Sign In as Demo Driver
+              </button>
+              <a href="#/login?redirect=profile" class="btn btn-secondary">
+                Sign In Manually
+              </a>
+            </div>
           </div>
         </div>
       `;
+
+      document
+        .getElementById('btn-quick-login-driver-profile')
+        ?.addEventListener('click', async () => {
+          try {
+            const res = await api.post('/auth/login', {
+              email: 'driver.aarav.mehta.1@voltgrid.internal',
+              password: 'VoltGrid#2026',
+            });
+            if (res.data?.token) {
+              state.setAuth(res.data.token, res.data.user);
+              toast.success('Signed in as demo driver!');
+              this.render(container);
+            }
+          } catch (err) {
+            toast.error('Quick login failed: ' + err.message);
+          }
+        });
       return;
     }
 

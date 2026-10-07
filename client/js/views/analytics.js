@@ -9,15 +9,16 @@ import { toast } from '../components/toast.js';
 
 export const AnalyticsView = {
   async render(container) {
-    if (!state.isAuthenticated) {
+    if (!state.hasRole('operator', 'admin')) {
       container.innerHTML = `
         <div class="container" style="padding-top: var(--space-2xl); text-align: center;">
           <div class="card" style="max-width: 500px; margin: 0 auto; padding: 2rem;">
-            <h2>Authentication Required</h2>
+            <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>
+            <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">Privileged Access Required</h2>
             <p style="color: var(--text-secondary); margin: 1rem 0 1.5rem 0;">
               Please sign in with operator or admin credentials to view grid analytics.
             </p>
-            <a href="#/login?redirect=analytics" class="btn btn-primary">Sign In</a>
+            <a href="#/login?redirect=analytics" class="btn btn-primary">Sign In with Elevated Privileges</a>
           </div>
         </div>
       `;

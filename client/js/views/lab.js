@@ -15,7 +15,7 @@ export class LabView {
   }
 
   async render(container) {
-    if (!state.user || state.user.role !== 'admin') {
+    if (!state.hasRole('admin')) {
       container.innerHTML = `
         <div class="container" style="padding: 4rem 1rem; text-align: center; max-width: 600px;">
           <div style="font-size: 3rem; margin-bottom: 1rem;">🔒</div>

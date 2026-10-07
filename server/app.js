@@ -24,11 +24,12 @@ export function createApp() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+          scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net', 'https://unpkg.com'],
           styleSrc: [
             "'self'",
             "'unsafe-inline'",
             'https://unpkg.com',
+            'https://cdn.jsdelivr.net',
             'https://fonts.googleapis.com',
           ],
           fontSrc: ["'self'", 'https://fonts.gstatic.com'],
@@ -36,14 +37,18 @@ export function createApp() {
             "'self'",
             'data:',
             'blob:',
+            'https://tile.openstreetmap.org',
             'https://*.tile.openstreetmap.org',
-            'https://*.basemaps.cartocdn.com',
+            'https://*.openstreetmap.org',
+            'https://unpkg.com',
+            'https://cdn.jsdelivr.net',
           ],
           connectSrc: ["'self'", env.CLIENT_ORIGIN],
           workerSrc: ["'self'", 'blob:'],
         },
       },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     })
   );
 
@@ -68,7 +73,9 @@ export function createApp() {
   // 5. Request Logging
   app.use(requestLogger);
 
-  // 5. Static Assets (Client App)
+  // 5. Static Assets (Client App & Local Leaflet Distribution)
+  const leafletDist = path.resolve(__dirname, '../node_modules/leaflet/dist');
+  app.use('/vendor/leaflet', express.static(leafletDist));
   app.use(express.static(clientPath));
 
   // 6. API Routes

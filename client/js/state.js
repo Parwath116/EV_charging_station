@@ -1,6 +1,6 @@
 /**
  * VoltGrid Client State Store
- * Manages user session, theme, cookie consent, and reactive subscriptions.
+ * Manages user session, theme, role evaluation, and reactive subscriptions.
  */
 
 import { api } from './api.js';
@@ -9,7 +9,8 @@ class StateStore {
   constructor() {
     this.user = null;
     this.isAuthenticated = false;
-    this.theme = localStorage.getItem('voltgrid_theme') || 'dark';
+    this.theme =
+      (typeof localStorage !== 'undefined' && localStorage.getItem('voltgrid_theme')) || 'dark';
     this.listeners = new Map();
   }
 
@@ -29,6 +30,23 @@ class StateStore {
     }
   }
 
+  /**
+   * Evaluates if the currently authenticated user possesses any of the provided roles.
+   * Returns false when the user is logged out or unauthenticated.
+   * Accepts multiple arguments or an array, e.g.:
+   *   state.hasRole('driver')
+   *   state.hasRole('operator', 'admin')
+   *   state.hasRole(['operator', 'admin'])
+   */
+  hasRole(...roles) {
+    if (!this.isAuthenticated || !this.user || !this.user.role) {
+      return false;
+    }
+    const flatRoles = roles.flat().filter(Boolean);
+    if (flatRoles.length === 0) return true;
+    return flatRoles.includes(this.user.role);
+  }
+
   setUser(user) {
     this.user = user;
     this.isAuthenticated = Boolean(user);
@@ -36,10 +54,26 @@ class StateStore {
     this.updateHeaderAuthUI();
   }
 
+  setAuth(token, user) {
+    if (token && typeof localStorage !== 'undefined') {
+      localStorage.setItem('voltgrid_token', token);
+    }
+    this.setUser(user);
+  }
+
+  async fetchCurrentUser() {
+    await this.initAuth();
+    return this.user;
+  }
+
   setTheme(theme) {
     this.theme = theme;
-    localStorage.setItem('voltgrid_theme', theme);
-    document.documentElement.setAttribute('data-theme', theme);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('voltgrid_theme', theme);
+    }
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
     this.notify('theme', theme);
   }
 
@@ -63,14 +97,16 @@ class StateStore {
   }
 
   updateHeaderAuthUI() {
+    if (typeof document === 'undefined') return;
+
     const container = document.getElementById('auth-controls');
     const drawerSlot = document.getElementById('drawer-auth-slot');
     const adminLinks = document.querySelectorAll('.admin-only');
 
-    // Show/hide admin navigation items
-    const isAdminOrOperator = this.user && ['admin', 'operator'].includes(this.user.role);
+    // Show/hide admin and operator navigation items
+    const isPrivileged = this.hasRole('admin', 'operator');
     adminLinks.forEach(el => {
-      el.style.display = isAdminOrOperator ? 'inline-block' : 'none';
+      el.style.display = isPrivileged ? 'inline-block' : 'none';
     });
 
     if (this.isAuthenticated && this.user) {
@@ -96,8 +132,9 @@ class StateStore {
     } else {
       const html = `<a href="#/login" class="btn btn-sm btn-primary">Sign In</a>`;
       if (container) container.innerHTML = html;
-      if (drawerSlot)
+      if (drawerSlot) {
         drawerSlot.innerHTML = `<a href="#/login" class="btn btn-primary btn-block">Sign In</a>`;
+      }
     }
   }
 
@@ -107,9 +144,18 @@ class StateStore {
     } catch {
       // Continue client teardown regardless
     }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('voltgrid_token');
+    }
     this.setUser(null);
-    window.location.hash = '#/login';
+    if (typeof window !== 'undefined') {
+      window.location.hash = '#/login';
+    }
   }
 }
 
 export const state = new StateStore();
+
+export function hasRole(...roles) {
+  return state.hasRole(...roles);
+}

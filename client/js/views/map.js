@@ -29,7 +29,13 @@ export class MapView {
     this.unsubscribeTheme = null;
   }
 
-  async render(container) {
+  async render(container, context = {}) {
+    const query = context?.query || new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const preselectedArea = query.get('area') || '';
+    if (preselectedArea) {
+      this.activeFilter.area = preselectedArea;
+    }
+
     container.innerHTML = `
       <div class="map-view-wrapper container" style="padding-top: var(--space-lg); padding-bottom: var(--space-xl);">
         <!-- Top Toolbar -->
@@ -51,7 +57,7 @@ export class MapView {
               <span>↺</span> Reset View
             </button>
             ${
-              state.hasRole('operator')
+              state.hasRole('operator', 'admin')
                 ? `<button id="btn-add-station-map" class="btn btn-secondary btn-sm" type="button" style="border-color: var(--accent-primary);">
                     <span>➕</span> Add Station
                   </button>`
@@ -112,13 +118,14 @@ export class MapView {
       </div>
     `;
 
+    await this.ensureLeafletLoaded();
     this.initLeaflet();
     this.attachEvents();
     await this.loadStations();
 
-    // Re-render tiles on theme change
+    // Toggle dark mode CSS filter on map container upon theme change
     this.unsubscribeTheme = state.subscribe(st => {
-      this.updateTileLayer(st.theme);
+      this.updateMapTheme(st.theme);
     });
 
     // Real-time station marker update via SSE
@@ -135,24 +142,92 @@ export class MapView {
     window.addEventListener('voltgrid:station_updated', this.handleStationUpdate);
   }
 
+  async ensureLeafletLoaded() {
+    if (window.L) return true;
+
+    // Verify Leaflet CSS is present
+    if (!document.querySelector('link[href*="leaflet"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/vendor/leaflet/leaflet.css';
+      document.head.appendChild(link);
+    }
+
+    // Verify Leaflet JS is present
+    if (!document.querySelector('script[src*="leaflet"]')) {
+      const script = document.createElement('script');
+      script.src = '/vendor/leaflet/leaflet.js';
+      document.head.appendChild(script);
+    }
+
+    return new Promise(resolve => {
+      let count = 0;
+      const interval = setInterval(() => {
+        count++;
+        if (window.L) {
+          clearInterval(interval);
+          resolve(true);
+        } else if (count === 15 && !window.L) {
+          // Attempt alternate CDN fallback
+          const fallback = document.createElement('script');
+          fallback.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+          document.head.appendChild(fallback);
+        } else if (count > 40) {
+          clearInterval(interval);
+          resolve(Boolean(window.L));
+        }
+      }, 100);
+    });
+  }
+
   initLeaflet() {
     if (!window.L) {
       toast.error('Map library failed to load. Please refresh the page.');
       return;
     }
 
-    // Initialize Leaflet Map locked to Bengaluru
-    this.map = window.L.map('leaflet-map', {
+    const containerEl = document.getElementById('leaflet-map');
+    if (!containerEl) return;
+
+    // Safely cleanup any previous Leaflet instance on this container
+    if (this.map) {
+      try {
+        this.map.remove();
+      } catch {
+        // ignore cleanup error
+      }
+      this.map = null;
+    }
+    if (containerEl._leaflet_id) {
+      delete containerEl._leaflet_id;
+    }
+
+    // Initialize Leaflet Map centered on Bengaluru
+    this.map = window.L.map(containerEl, {
       center: BENGALURU_CENTER,
       zoom: 12,
-      minZoom: 10,
+      minZoom: 9,
       maxZoom: 18,
       maxBounds: BENGALURU_BOUNDS,
-      maxBoundsViscosity: 0.8,
     });
 
-    this.tileLayer = null;
-    this.updateTileLayer(state.theme);
+    // Invalidate size immediately and after layout pass
+    this.map.invalidateSize();
+    setTimeout(() => {
+      if (this.map) {
+        this.map.invalidateSize();
+      }
+    }, 200);
+
+    // Single OpenStreetMap tile layer (no API key required)
+    this.tileLayer = window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
+    }).addTo(this.map);
+
+    this.updateMapTheme(state.theme);
 
     // Markers layer group
     this.markersGroup = window.L.layerGroup().addTo(this.map);
@@ -160,7 +235,7 @@ export class MapView {
     // Map Click Listener
     this.map.on('click', e => {
       const { lat, lng } = e.latlng;
-      if (state.hasRole('operator')) {
+      if (state.hasRole('operator', 'admin')) {
         this.openCreateStationModal(lat, lng);
       } else {
         // Drop click marker and prompt circle filter
@@ -169,23 +244,15 @@ export class MapView {
     });
   }
 
-  updateTileLayer(currentTheme) {
-    if (!this.map) return;
-    if (this.tileLayer) {
-      this.map.removeLayer(this.tileLayer);
+  updateMapTheme(currentTheme) {
+    const containerEl = document.getElementById('leaflet-map');
+    if (containerEl) {
+      containerEl.classList.toggle('map-dark-theme', currentTheme === 'dark');
     }
+  }
 
-    const tileUrl =
-      currentTheme === 'light'
-        ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-        : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-
-    this.tileLayer = window.L.tileLayer(tileUrl, {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(this.map);
+  updateTileLayer(currentTheme) {
+    this.updateMapTheme(currentTheme);
   }
 
   createCustomIcon(status) {
@@ -264,7 +331,7 @@ export class MapView {
           </div>
 
           <div style="display: flex; gap: 0.35rem;">
-            <a href="#/bookings?stationId=${st._id}" class="btn btn-primary btn-sm" style="flex: 1; text-align: center; text-decoration: none;">Reserve</a>
+            <a href="#/bookings?stationId=${st._id}" class="btn btn-primary btn-sm btn-popup-reserve" style="flex: 1; text-align: center; text-decoration: none;">Reserve</a>
             <a href="#/sessions?stationId=${st._id}" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none;">Charge</a>
           </div>
         </div>
@@ -273,11 +340,31 @@ export class MapView {
       marker.bindPopup(popupHtml);
       this.markersGroup.addLayer(marker);
     });
+
+    // Auto-fit to filtered markers if area filter is active
+    if (this.activeFilter.area && stationsList.length > 0 && this.map) {
+      setTimeout(() => {
+        if (!this.map || !this.markersGroup) return;
+        const layers = this.markersGroup.getLayers();
+        if (layers.length > 0) {
+          const group = window.L.featureGroup(layers);
+          if (group.getBounds().isValid()) {
+            this.map.fitBounds(group.getBounds().pad(0.3));
+          }
+        }
+      }, 150);
+    }
   }
 
   attachEvents() {
+    // Set initial filter dropdown values
+    const filterAreaEl = document.getElementById('filter-area');
+    if (filterAreaEl && this.activeFilter.area) {
+      filterAreaEl.value = this.activeFilter.area;
+    }
+
     // Area Filter
-    document.getElementById('filter-area')?.addEventListener('change', e => {
+    filterAreaEl?.addEventListener('change', e => {
       this.activeFilter.area = e.target.value;
       this.loadStations();
     });
@@ -534,9 +621,14 @@ export class MapView {
     }
     if (this.unsubscribeTheme) {
       this.unsubscribeTheme();
+      this.unsubscribeTheme = null;
     }
     if (this.map) {
-      this.map.remove();
+      try {
+        this.map.remove();
+      } catch {
+        // ignore
+      }
       this.map = null;
     }
   }

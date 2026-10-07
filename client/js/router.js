@@ -75,7 +75,7 @@ export class Router {
       return;
     }
 
-    if (handler.roles && (!state.user || !handler.roles.includes(state.user.role))) {
+    if (handler.roles && !state.hasRole(...handler.roles)) {
       window.location.hash = '#/';
       return;
     }
@@ -86,10 +86,59 @@ export class Router {
     // Scroll to top of viewport on navigation
     window.scrollTo({ top: 0, behavior: 'instant' });
 
-    // Render View
-    if (this.container) {
+    // Cleanup previous view if it had a destroy lifecycle hook
+    if (this.currentViewInstance && typeof this.currentViewInstance.destroy === 'function') {
+      try {
+        this.currentViewInstance.destroy();
+      } catch (err) {
+        console.warn('Error during view cleanup:', err);
+      }
+      this.currentViewInstance = null;
+    }
+
+    // Resolve view instance (handles both class constructors and plain objects)
+    let viewInstance;
+    if (typeof handler === 'function') {
+      try {
+        viewInstance = new handler();
+      } catch {
+        viewInstance = handler;
+      }
+    } else {
+      viewInstance = handler;
+    }
+    this.currentViewInstance = viewInstance;
+
+    // Render View with error boundary
+    if (this.container && viewInstance) {
       this.container.innerHTML = '';
-      await handler.render(this.container, { params, query });
+      try {
+        if (typeof viewInstance.render === 'function') {
+          await viewInstance.render(this.container, { params, query });
+        } else if (typeof handler.render === 'function') {
+          await handler.render(this.container, { params, query });
+        }
+      } catch (renderError) {
+        console.error(
+          `Error rendering view for route "${path}":`,
+          renderError.stack || renderError
+        );
+        this.container.innerHTML = `
+          <div class="container" style="padding: 4rem 1rem; text-align: center; max-width: 600px;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">⚠️</div>
+            <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">View Rendering Error</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem;">
+              ${renderError.message || 'An unexpected error occurred while loading this module.'}
+            </p>
+            ${
+              renderError.stack
+                ? `<pre style="text-align: left; background: var(--bg-surface, #1e293b); padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.8rem; margin-bottom: 1.5rem; border: 1px solid var(--border-color, #334155); color: #ef4444; font-family: monospace;">${renderError.stack}</pre>`
+                : ''
+            }
+            <a href="#/" class="btn btn-primary">Return to Dashboard</a>
+          </div>
+        `;
+      }
     }
   }
 

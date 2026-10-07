@@ -86,7 +86,7 @@ export class ShortcutsManager {
 
     // 6. New Station: 'n' (Admin or Operator only)
     if (e.key === 'n' || e.key === 'N') {
-      const isPrivileged = state.user && ['admin', 'operator'].includes(state.user.role);
+      const isPrivileged = state.hasRole('admin', 'operator');
       if (isPrivileged) {
         e.preventDefault();
         window.location.hash = '#/stations';

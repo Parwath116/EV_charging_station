@@ -16,8 +16,7 @@ export class CommandPaletteManager {
   }
 
   getCommands() {
-    const isAdminOrOp =
-      state.user && ['admin', 'operator'].includes(state.role || state.user?.role);
+    const isAdminOrOp = state.hasRole('admin', 'operator');
 
     const base = [
       {

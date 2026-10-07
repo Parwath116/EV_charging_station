@@ -21,7 +21,13 @@ export class StationsView {
     this.sort = 'createdAt:-1';
   }
 
-  async render(container) {
+  async render(container, context = {}) {
+    const query = context?.query || new URLSearchParams(window.location.hash.split('?')[1] || '');
+    if (query.get('q')) this.filters.q = query.get('q');
+    if (query.get('area')) this.filters.area = query.get('area');
+    if (query.get('connector')) this.filters.connector = query.get('connector');
+    if (query.get('status')) this.filters.status = query.get('status');
+
     container.innerHTML = `
       <div class="stations-view-wrapper container" style="padding-top: var(--space-lg); padding-bottom: var(--space-2xl);">
         <!-- Header -->
@@ -37,7 +43,7 @@ export class StationsView {
               <span>🗺️</span> Switch to Map
             </a>
             ${
-              state.hasRole('operator')
+              state.hasRole('operator', 'admin')
                 ? `<button id="btn-create-station" class="btn btn-primary btn-sm" type="button">
                     <span>➕</span> Add Station
                   </button>`
@@ -127,6 +133,20 @@ export class StationsView {
   }
 
   attachEvents() {
+    // Sync initial filter values from URL
+    if (this.filters.area) {
+      const areaEl = document.getElementById('select-area');
+      if (areaEl) areaEl.value = this.filters.area;
+    }
+    if (this.filters.connector) {
+      const connEl = document.getElementById('select-connector');
+      if (connEl) connEl.value = this.filters.connector;
+    }
+    if (this.filters.status) {
+      const statusEl = document.getElementById('select-status');
+      if (statusEl) statusEl.value = this.filters.status;
+    }
+
     // Quick search hotkey
     const searchInput = document.getElementById('search-input');
     document.addEventListener('keydown', e => {
@@ -261,7 +281,7 @@ export class StationsView {
               </div>
 
               ${
-                state.hasRole('operator')
+                state.hasRole('operator', 'admin')
                   ? `
                 <div style="display: flex; gap: 0.25rem;">
                   <button class="btn btn-secondary btn-sm btn-edit-tariff" data-id="${st._id}" data-tariff="${st.tariffPerKWh}" title="Edit Tariff">₹</button>

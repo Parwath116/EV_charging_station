@@ -7,9 +7,12 @@ export class ApiClient {
   async request(endpoint, options = {}) {
     const url = endpoint.startsWith('http') ? endpoint : `/api${endpoint}`;
 
+    const token =
+      typeof localStorage !== 'undefined' ? localStorage.getItem('voltgrid_token') : null;
     const headers = {
       'Content-Type': 'application/json',
       'X-Requested-With': 'XMLHttpRequest',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     };
 
